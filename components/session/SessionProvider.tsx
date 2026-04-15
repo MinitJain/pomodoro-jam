@@ -595,6 +595,7 @@ function SessionContent({
   }, [reset, canControl, broadcastWithCount, broadcastShareLock, supabase, session.id])
 
   const handleTogglePublic = useCallback(async (newValue: boolean) => {
+    const oldValue = isPublic
     setIsPublic(newValue)
     const { error } = await supabase
       .from('sessions')
@@ -602,9 +603,9 @@ function SessionContent({
       .eq('id', session.id)
     if (error) {
       console.error('[handleTogglePublic] DB update failed:', error)
-      setIsPublic(prev => !prev) // revert on failure
+      setIsPublic(oldValue) // revert to captured original
     }
-  }, [supabase, session.id])
+  }, [isPublic, supabase, session.id])
 
   const handleAcceptRequest = useCallback(async () => {
     if (!pendingRequest) return

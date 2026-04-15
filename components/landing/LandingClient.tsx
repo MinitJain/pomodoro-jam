@@ -143,6 +143,7 @@ function LandingContent({ user, profileUsername, activeSessionCount }: LandingCl
 
   const openCreateModal = () => {
     setRoomName(generateRoomName())
+    setIsRoomPublic(true)
     setShowCreateModal(true)
     // Auto-focus after the modal renders
     setTimeout(() => roomNameInputRef.current?.select(), 50)
@@ -519,7 +520,7 @@ function LandingContent({ user, profileUsername, activeSessionCount }: LandingCl
                 value={roomName}
                 onChange={e => setRoomName(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && roomName.trim()) void handleCreateSession(roomName.trim())
+                  if (e.key === 'Enter' && roomName.trim()) void handleCreateSession(roomName.trim(), isRoomPublic)
                   if (e.key === 'Escape') setShowCreateModal(false)
                 }}
                 maxLength={100}

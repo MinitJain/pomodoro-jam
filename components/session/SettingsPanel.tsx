@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Globe, Lock } from 'lucide-react'
 
 export interface TimerDurations {
   focus: number  // minutes
@@ -141,6 +142,9 @@ export function SettingsPanel({ settings, onApply, disabled, isWatcher, isPublic
           </p>
           <button
             type="button"
+            role="switch"
+            aria-checked={isPublic}
+            aria-label="Room visibility"
             onClick={() => onTogglePublic(!isPublic)}
             className="w-full flex items-center justify-between py-2.5 px-3 rounded-xl cursor-pointer transition-colors"
             style={{
@@ -149,8 +153,9 @@ export function SettingsPanel({ settings, onApply, disabled, isWatcher, isPublic
             }}
           >
             <div className="flex flex-col items-start gap-0.5">
-              <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                {isPublic ? '🌐 Public room' : '🔒 Private room'}
+              <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                {isPublic ? <Globe size={14} /> : <Lock size={14} />}
+                {isPublic ? 'Public room' : 'Private room'}
               </span>
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 {isPublic ? 'Visible on Explore' : 'Link-only, locked on Explore'}
