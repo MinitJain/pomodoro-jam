@@ -137,6 +137,17 @@ function SessionContent({
   const broadcastTimerStateRef = useRef<((state: TimerState) => void) | null>(null)
   const skipAndStartRef = useRef<((nextMode: TimerMode, durations?: Record<TimerMode, number>) => TimerState) | null>(null)
 
+  // Serialized write queue — prevents concurrent timer writes from racing each other
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const enqueueSessionUpdate = useCallback((patch: Record<string, unknown>) => {
+    writeQueueRef.current = writeQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const { error } = await supabase.from('sessions').update(patch).eq('id', session.id)
+        if (error) console.error('[session] DB write failed:', error)
+      })
+  }, [supabase, session.id])
+
   const handleExpire = useCallback(() => {
     playCompleteSound()
     showNotification('PomodoroJam', 'Your room has ended! Time for a break.')
@@ -164,19 +175,19 @@ function SessionContent({
       if (!newState) return
       if (canControlRef.current) {
         broadcastTimerStateRef.current?.(newState)
-        supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+        enqueueSessionUpdate({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
       }
     } else if ((currentMode === 'short' || currentMode === 'long') && settings.autoStartPomodoros) {
       const newState = skipAndStartRef.current?.('focus', durations)
       if (!newState) return
       if (canControlRef.current) {
         broadcastTimerStateRef.current?.(newState)
-        supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+        enqueueSessionUpdate({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
       }
     } else {
       setShowBreakOverlay(true)
     }
-  }, [userId, supabase, session.id])
+  }, [userId, supabase, session.id, enqueueSessionUpdate])
 
   const {
     timeLeft, status, mode, timerState,
@@ -493,9 +504,9 @@ function SessionContent({
     broadcastActivity(msg)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, mode: newState.mode }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+      enqueueSessionUpdate({ running: true, time_left: newState.timeLeft, mode: newState.mode })
     }
-  }, [start, actorName, canControl, broadcastWithCount, broadcastActivity, supabase, session.id])
+  }, [start, actorName, canControl, broadcastWithCount, broadcastActivity, enqueueSessionUpdate])
 
   const handlePause = useCallback(() => {
     const newState = pause()
@@ -505,9 +516,9 @@ function SessionContent({
     broadcastActivity(msg)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft })
     }
-  }, [pause, actorName, canControl, broadcastWithCount, broadcastActivity, supabase, session.id])
+  }, [pause, actorName, canControl, broadcastWithCount, broadcastActivity, enqueueSessionUpdate])
 
   // Global keyboard shortcuts (placed after handleStart/handlePause declarations)
   useEffect(() => {
@@ -537,9 +548,9 @@ function SessionContent({
     broadcastActivity(msg)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
     }
-  }, [reset, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, supabase, session.id])
+  }, [reset, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, enqueueSessionUpdate])
 
   const handleSkip = useCallback(() => {
     let nextMode: TimerMode
@@ -561,9 +572,9 @@ function SessionContent({
     setShowBreakOverlay(false)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
     }
-  }, [mode, actorName, setMode, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, sessionSettings.rounds, supabase, session.id])
+  }, [mode, actorName, setMode, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, sessionSettings.rounds, enqueueSessionUpdate])
 
   const handleModeChange = useCallback((newMode: TimerMode) => {
     const modeMessages: Record<TimerMode, string> = {
@@ -577,9 +588,9 @@ function SessionContent({
     setShowBreakOverlay(false)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id).then(({ error }) => { if (error) console.error('[session] DB write failed:', error) })
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
     }
-  }, [setMode, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, supabase, session.id])
+  }, [setMode, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, enqueueSessionUpdate])
 
   const handleApplySettings = useCallback(async (newSettings: SessionSettings) => {
     setSessionSettings(newSettings)
