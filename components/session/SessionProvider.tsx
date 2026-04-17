@@ -22,6 +22,7 @@ import { BreakOverlay } from '@/components/session/BreakOverlay'
 import { GuestNicknamePrompt } from '@/components/session/GuestNicknamePrompt'
 import { SettingsRequestCard } from '@/components/session/SettingsRequestCard'
 import { AmbientPlayer } from '@/components/session/AmbientPlayer'
+import { StatsTab } from '@/components/session/StatsTab'
 import { ModeTipBubble } from '@/components/session/ModeTipBubble'
 import { KeyboardShortcutsModal } from '@/components/session/KeyboardShortcutsModal'
 import { ToastProvider, useToast } from '@/components/ui/Toast'
@@ -55,6 +56,7 @@ function SessionContent({
   avatarUrl,
 }: SessionProviderProps) {
   const [isHost, setIsHost] = useState(isHostProp)
+  const [activeTab, setActiveTab] = useState<'timer' | 'tasks' | 'stats'>('timer')
   const [sessionMode, setSessionMode] = useState<'host' | 'jam' | 'solo'>(session.session_mode ?? 'host')
   const [isPublic, setIsPublic] = useState(session.is_public ?? true)
   const [showBreakOverlay, setShowBreakOverlay] = useState(false)
@@ -713,16 +715,26 @@ function SessionContent({
           <Logo size="sm" />
         </Link>
 
-        {/* Room name — centered absolutely so it doesn't shift the side controls */}
-        {session.title && (
-          <span
-            className="absolute left-1/2 -translate-x-1/2 text-sm font-medium max-w-[40%] truncate"
-            style={{ color: 'var(--text-secondary)' }}
-            title={session.title}
-          >
-            {session.title}
-          </span>
-        )}
+        {/* Tab nav — centered absolutely */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+          {(['timer', 'tasks', 'stats'] as const).map((tab) => {
+            const label = tab.charAt(0).toUpperCase() + tab.slice(1)
+            const active = activeTab === tab
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="px-3 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer"
+                style={active
+                  ? { background: 'var(--bg-elevated)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-sm)' }
+                  : { color: 'var(--text-muted)' }
+                }
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
 
@@ -767,8 +779,23 @@ function SessionContent({
         </div>
       )}
 
+      {/* Stats tab */}
+      {activeTab === 'stats' && (
+        <div className="flex-1 overflow-y-auto">
+          <StatsTab userId={userId} username={localUsername} avatarUrl={avatarUrl ?? null} />
+        </div>
+      )}
+
+      {/* Tasks tab */}
+      {activeTab === 'tasks' && (
+        <div className="flex-1 flex flex-col items-center justify-center px-4 py-12 gap-3">
+          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Tasks</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Coming in an upcoming update.</p>
+        </div>
+      )}
+
       {/* Main */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-6 sm:py-8">
+      <main className={activeTab === 'timer' ? 'flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-6 sm:py-8' : 'hidden'}>
         {/* Timer card */}
         <div
           className="w-full max-w-sm sm:max-w-md flex flex-col items-center gap-4 sm:gap-5 p-5 sm:p-8 rounded-3xl animate-scale-in"
