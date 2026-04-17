@@ -798,13 +798,16 @@ function SessionContent({
       <main className={activeTab === 'timer' ? 'flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-6 sm:py-8' : 'hidden'}>
         {/* Room name */}
         {session.title && (
-          <h1
-            className="text-base font-semibold text-center max-w-xs truncate -mb-1"
-            style={{ color: 'var(--text-primary)' }}
-            title={session.title}
-          >
-            {session.title}
-          </h1>
+          <div className="flex flex-col items-center gap-1 mb-2">
+            <p className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: 'var(--text-muted)' }}>Room</p>
+            <h1
+              className="text-lg font-bold text-center max-w-xs truncate"
+              style={{ color: 'var(--text-primary)' }}
+              title={session.title}
+            >
+              {session.title}
+            </h1>
+          </div>
         )}
 
         {/* Timer card */}
