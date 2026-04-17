@@ -152,6 +152,17 @@ function SessionContent({
   const broadcastTimerStateRef = useRef<((state: TimerState) => void) | null>(null)
   const skipAndStartRef = useRef<((nextMode: TimerMode, durations?: Record<TimerMode, number>) => TimerState) | null>(null)
 
+  // Serialized write queue — prevents concurrent timer writes from racing each other
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const enqueueSessionUpdate = useCallback((patch: Record<string, unknown>) => {
+    writeQueueRef.current = writeQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const { error } = await supabase.from('sessions').update(patch).eq('id', session.id)
+        if (error) console.error('[session] DB write failed:', error)
+      })
+  }, [supabase, session.id])
+
   const handleExpire = useCallback(() => {
     playCompleteSound()
     showNotification('PomodoroJam', 'Your room has ended! Time for a break.')
@@ -180,19 +191,19 @@ function SessionContent({
       if (!newState) return
       if (canControlRef.current) {
         broadcastTimerStateRef.current?.(newState)
-        supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode, pomos_done: focusCountRef.current }).eq('id', session.id)
+        enqueueSessionUpdate({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode, pomos_done: focusCountRef.current })
       }
     } else if ((currentMode === 'short' || currentMode === 'long') && settings.autoStartPomodoros) {
       const newState = skipAndStartRef.current?.('focus', durations)
       if (!newState) return
       if (canControlRef.current) {
         broadcastTimerStateRef.current?.(newState)
-        supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id)
+        enqueueSessionUpdate({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
       }
     } else {
       setShowBreakOverlay(true)
     }
-  }, [userId, supabase, session.id])
+  }, [userId, supabase, session.id, enqueueSessionUpdate])
 
   const {
     timeLeft, status, mode, timerState,
@@ -376,12 +387,29 @@ function SessionContent({
     }
   }, [])
 
-  // Host heartbeat — keeps last_active_at fresh so explore page can filter out zombie sessions
+  // Track latest participants in a ref so the heartbeat can read it without restarting the interval
+  const participantsRef = useRef(participants)
+  useEffect(() => { participantsRef.current = participants }, [participants])
+
+  // Write participant count + preview immediately whenever the list changes (so explore reflects joins fast)
+  useEffect(() => {
+    if (!isHost) return
+    const preview = participants.slice(0, 3).map(p => ({ username: p.username ?? null, avatar_url: p.avatar_url ?? null }))
+    supabase.from('sessions').update({ participant_count: participants.length, participant_preview: preview }).eq('id', session.id)
+      .then(({ error }) => { if (error) console.error('[participant-sync] Failed:', error) })
+  }, [isHost, participants, supabase, session.id])
+
+  // Host heartbeat — keeps last_active_at + participant data fresh for explore page
   useEffect(() => {
     if (!isHost) return
     const id = setInterval(() => {
-      supabase.from('sessions').update({ last_active_at: new Date().toISOString() }).eq('id', session.id)
-        .then(({ error }) => { if (error) console.error('[heartbeat] Failed to update last_active_at for session', session.id, error) })
+      const preview = participantsRef.current.slice(0, 3).map(p => ({ username: p.username ?? null, avatar_url: p.avatar_url ?? null }))
+      supabase.from('sessions').update({
+        last_active_at: new Date().toISOString(),
+        participant_count: participantsRef.current.length,
+        participant_preview: preview,
+      }).eq('id', session.id)
+        .then(({ error }) => { if (error) console.error('[heartbeat] Failed:', error) })
     }, 30_000)
     return () => clearInterval(id)
   }, [isHost, supabase, session.id])
@@ -492,9 +520,9 @@ function SessionContent({
     broadcastActivity(msg)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, mode: newState.mode }).eq('id', session.id)
+      enqueueSessionUpdate({ running: true, time_left: newState.timeLeft, mode: newState.mode })
     }
-  }, [start, actorName, canControl, broadcastWithCount, broadcastActivity, supabase, session.id])
+  }, [start, actorName, canControl, broadcastWithCount, broadcastActivity, enqueueSessionUpdate])
 
   const handlePause = useCallback(() => {
     const newState = pause()
@@ -504,9 +532,9 @@ function SessionContent({
     broadcastActivity(msg)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft }).eq('id', session.id)
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft })
     }
-  }, [pause, actorName, canControl, broadcastWithCount, broadcastActivity, supabase, session.id])
+  }, [pause, actorName, canControl, broadcastWithCount, broadcastActivity, enqueueSessionUpdate])
 
   // Global keyboard shortcuts (placed after handleStart/handlePause declarations)
   useEffect(() => {
@@ -536,9 +564,9 @@ function SessionContent({
     broadcastActivity(msg)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id)
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
     }
-  }, [reset, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, supabase, session.id])
+  }, [reset, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, enqueueSessionUpdate])
 
   const handleSkip = useCallback(() => {
     let nextMode: TimerMode
@@ -562,15 +590,15 @@ function SessionContent({
     setShowBreakOverlay(false)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({
+      enqueueSessionUpdate({
         running: false,
         time_left: newState.timeLeft,
         total_time: newState.totalTime,
         mode: newState.mode,
         ...(skippingFocus ? { pomos_done: focusCountRef.current } : {}),
-      }).eq('id', session.id)
+      })
     }
-  }, [mode, actorName, setMode, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, sessionSettings.rounds, supabase, session.id])
+  }, [mode, actorName, setMode, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, sessionSettings.rounds, enqueueSessionUpdate])
 
   const handleModeChange = useCallback((newMode: TimerMode) => {
     const modeMessages: Record<TimerMode, string> = {
@@ -584,9 +612,9 @@ function SessionContent({
     setShowBreakOverlay(false)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id)
+      enqueueSessionUpdate({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode })
     }
-  }, [setMode, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, supabase, session.id])
+  }, [setMode, actorName, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, enqueueSessionUpdate])
 
   const handleApplySettings = useCallback(async (newSettings: SessionSettings) => {
     setSessionSettings(newSettings)
