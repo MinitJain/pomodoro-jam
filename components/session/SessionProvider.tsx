@@ -70,8 +70,10 @@ function SessionContent({
     autoStartBreaks: session.settings?.autoStartBreaks ?? false,
     autoStartPomodoros: session.settings?.autoStartPomodoros ?? false,
   })
-  const focusCountRef = useRef(0)
-  const [focusCount, setFocusCount] = useState(0)
+  const initialPomosDone = session.pomos_done ?? 0
+  const focusCountRef = useRef(initialPomosDone)
+  const [focusCount, setFocusCount] = useState(initialPomosDone)
+  const [todayCount, setTodayCount] = useState<number | null>(null)
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const sessionLogRef = useRef<string[]>([])
   const totalLogCountRef = useRef<number>(0)
@@ -101,6 +103,19 @@ function SessionContent({
   const hasRequestedNotifRef = useRef(false)
   const supabase = useMemo(() => createClient(), [])
   const { toast } = useToast()
+
+  // Fetch today's completed pomodoro count for the counter badge
+  useEffect(() => {
+    if (!userId) return
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    supabase
+      .from('pomodoro_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('completed_at', today.toISOString())
+      .then(({ count }) => { setTodayCount(count ?? 0) })
+  }, [userId, supabase])
 
   // Guest host detection via localStorage
   useEffect(() => {
@@ -159,12 +174,13 @@ function SessionContent({
     if (currentMode === 'focus' && settings.autoStartBreaks) {
       focusCountRef.current += 1
       setFocusCount(focusCountRef.current)
+      setTodayCount(prev => (prev ?? 0) + 1)
       const nextMode = focusCountRef.current % settings.rounds === 0 ? 'long' : 'short'
       const newState = skipAndStartRef.current?.(nextMode, durations)
       if (!newState) return
       if (canControlRef.current) {
         broadcastTimerStateRef.current?.(newState)
-        supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id)
+        supabase.from('sessions').update({ running: true, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode, pomos_done: focusCountRef.current }).eq('id', session.id)
       }
     } else if ((currentMode === 'short' || currentMode === 'long') && settings.autoStartPomodoros) {
       const newState = skipAndStartRef.current?.('focus', durations)
@@ -526,9 +542,11 @@ function SessionContent({
 
   const handleSkip = useCallback(() => {
     let nextMode: TimerMode
-    if (mode === 'focus') {
+    const skippingFocus = mode === 'focus'
+    if (skippingFocus) {
       focusCountRef.current += 1
       setFocusCount(focusCountRef.current)
+      setTodayCount(prev => (prev ?? 0) + 1)
       nextMode = focusCountRef.current % sessionSettings.rounds === 0 ? 'long' : 'short'
     } else {
       nextMode = 'focus'
@@ -544,7 +562,13 @@ function SessionContent({
     setShowBreakOverlay(false)
     if (canControl) {
       broadcastWithCount(newState)
-      supabase.from('sessions').update({ running: false, time_left: newState.timeLeft, total_time: newState.totalTime, mode: newState.mode }).eq('id', session.id)
+      supabase.from('sessions').update({
+        running: false,
+        time_left: newState.timeLeft,
+        total_time: newState.totalTime,
+        mode: newState.mode,
+        ...(skippingFocus ? { pomos_done: focusCountRef.current } : {}),
+      }).eq('id', session.id)
     }
   }, [mode, actorName, setMode, canControl, broadcastWithCount, broadcastActivity, sessionSettings.durations, sessionSettings.rounds, supabase, session.id])
 
@@ -575,6 +599,7 @@ function SessionContent({
         running: false,
         time_left: newState.timeLeft,
         mode: newState.mode,
+        pomos_done: 0,
         settings: {
           focus: newSettings.durations.focus,
           short: newSettings.durations.short,
@@ -647,11 +672,7 @@ function SessionContent({
   }, [pendingRequest, broadcastSettingsResponse])
 
   const progress = computeProgress(timerState)
-  const isFirstRoundIdle = focusCount === 0 && mode === 'focus'
-  const focusRoundsLeft = sessionSettings.rounds - ((focusCount % sessionSettings.rounds) + 1)
-  const roundLabel = mode === 'focus'
-    ? `Round ${focusCount + 1} · ${focusRoundsLeft === 0 ? 'long break next' : `long break after ${focusRoundsLeft} more`}`
-    : `Round ${focusCount} of ${sessionSettings.rounds} · ${mode === 'long' ? 'long break' : 'short break'}`
+  const roundLabel = `${focusCount} pomodoro${focusCount !== 1 ? 's' : ''} completed`
 
   return (
     <div
@@ -734,16 +755,20 @@ function SessionContent({
         >
           <ModeSelector mode={mode} isHost={canControl} onChange={handleModeChange} />
 
-          {/* Round indicator — always visible; dimmed on round 1 idle */}
+          {/* Round indicator */}
           <p
-            className="text-xs transition-opacity duration-300 mt-1"
-            style={{
-              color: isFirstRoundIdle ? 'var(--text-secondary)' : 'var(--text-primary)',
-              fontSize: isFirstRoundIdle ? '11px' : undefined,
-            }}
+            className="text-xs mt-1"
+            style={{ color: 'var(--text-muted)' }}
           >
             {roundLabel}
           </p>
+
+          {/* Today's pomodoro count — auth users only */}
+          {userId && todayCount !== null && (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              #{todayCount} today
+            </p>
+          )}
 
           {/* Timer ring */}
           <div className="block sm:hidden">
