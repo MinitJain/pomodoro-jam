@@ -715,36 +715,25 @@ function SessionContent({
           <Logo size="sm" />
         </Link>
 
-        {/* Center column: room name + tab nav stacked */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
-          {session.title && (
-            <span
-              className="text-xs font-medium max-w-[180px] truncate"
-              style={{ color: 'var(--text-secondary)' }}
-              title={session.title}
-            >
-              {session.title}
-            </span>
-          )}
-          <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
-            {(['timer', 'tasks', 'stats'] as const).map((tab) => {
-              const label = tab.charAt(0).toUpperCase() + tab.slice(1)
-              const active = activeTab === tab
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className="px-3 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer"
-                  style={active
-                    ? { background: 'var(--bg-elevated)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-sm)' }
-                    : { color: 'var(--text-muted)' }
-                  }
-                >
-                  {label}
-                </button>
-              )
-            })}
-          </div>
+        {/* Tab nav — centered absolutely */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+          {(['timer', 'tasks', 'stats'] as const).map((tab) => {
+            const label = tab.charAt(0).toUpperCase() + tab.slice(1)
+            const active = activeTab === tab
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="px-3 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer"
+                style={active
+                  ? { background: 'var(--bg-elevated)', color: 'var(--text-primary)', boxShadow: 'var(--shadow-sm)' }
+                  : { color: 'var(--text-muted)' }
+                }
+              >
+                {label}
+              </button>
+            )
+          })}
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -807,6 +796,17 @@ function SessionContent({
 
       {/* Main */}
       <main className={activeTab === 'timer' ? 'flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-6 sm:py-8' : 'hidden'}>
+        {/* Room name */}
+        {session.title && (
+          <h1
+            className="text-base font-semibold text-center max-w-xs truncate -mb-1"
+            style={{ color: 'var(--text-primary)' }}
+            title={session.title}
+          >
+            {session.title}
+          </h1>
+        )}
+
         {/* Timer card */}
         <div
           className="w-full max-w-sm sm:max-w-md flex flex-col items-center gap-4 sm:gap-5 p-5 sm:p-8 rounded-3xl animate-scale-in"
